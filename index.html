@@ -792,6 +792,7 @@ async function doLogin(){
   await Promise.all([loadReservas(), loadNotas()]);
   hideLoading();
   cu=u;
+  loadSocioTel();
   document.getElementById('user-avatar').textContent=s.initials;
   document.getElementById('f-nombre').value=sN(u);
   
@@ -967,6 +968,7 @@ function updateReservaForm(){
   document.getElementById('f-coms-max').textContent='máx. '+maxComs;
   const mesasLabel = selMesas.length===1 ? 'Mesa '+selMesas[0] : 'Mesas '+selMesas.join(' + ');
   document.getElementById('form-title').textContent=mesasLabel+' · '+TL[cTurno];
+  if(socioTel) document.getElementById('f-tel').value=socioTel;
   document.getElementById('reserva-form').classList.add('visible');
   setTimeout(()=>document.getElementById('reserva-form').scrollIntoView({behavior:'smooth',block:'nearest'}),50);
 }
@@ -1495,8 +1497,8 @@ async function loadSocioTel(){
   const {data}=await sb.from('socios').select('tel').eq('socio_num',cu).single();
   if(data&&data.tel){
     socioTel=data.tel;
-    const telField=document.getElementById('f-tel');
-    if(telField&&!telField.value) telField.value=data.tel;
+    const f=document.getElementById('f-tel');
+    if(f) f.value=data.tel;
   }
 }
 async function saveSocioTel(tel){
