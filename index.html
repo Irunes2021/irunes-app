@@ -287,11 +287,11 @@
     <div class="login-form">
       <div class="field-group">
         <label>Número de socio</label>
-        <input type="text" id="login-user" placeholder="Ej: 042" autocomplete="off" inputmode="numeric">
+        <input type="text" id="login-user" placeholder="Ej: 042" autocomplete="off" inputmode="numeric" onclick="this.focus()" ontouchend="var el=this;setTimeout(function(){el.focus();},50);">
       </div>
       <div class="field-group">
         <label>DNI</label>
-        <input type="password" id="login-pass" placeholder="Ej: 12345678A" autocomplete="new-password">
+        <input type="password" id="login-pass" placeholder="Ej: 12345678A" autocomplete="new-password" onclick="this.focus()" ontouchend="var el=this;setTimeout(function(){el.focus();},50);">
         <div class="error-msg" id="login-error">Número de socio o DNI incorrecto</div>
       </div>
       <button class="btn-primary" id="login-btn" onclick="doLogin()">Entrar</button>
