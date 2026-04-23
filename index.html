@@ -633,7 +633,12 @@ let coms=8, adminComs=8, aFilter='todos', editingSocio=null;
 let reservas=[]; // cargadas desde Supabase
 let calViewDate=new Date();
 
-function fmt(d){return d.toISOString().slice(0,10);}
+function fmt(d){
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const day=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
 function getMesasActivas(){
   return MESES_EXTERIOR.includes(new Date().getMonth())?[1,2,3,4,5]:[1,2,3,4];
 }
