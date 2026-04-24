@@ -823,7 +823,7 @@ async function deleteReserva(id){
 // ── FECHA ────────────────────────────────────────────
 function renderDate(){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const cd=new Date(cDate);cd.setHours(0,0,0,0);
   document.getElementById('disp-dname').textContent=DIAS[cd.getDay()];
   document.getElementById('disp-dfull').textContent=cd.getDate()+' de '+MESES[cd.getMonth()]+' '+cd.getFullYear();
@@ -832,7 +832,7 @@ function renderDate(){
 }
 function changeDate(dir){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const cd=new Date(cDate);cd.setDate(cd.getDate()+dir);
   if(cd<today||cd>maxD)return;
   cDate=cd;selMesas=[];
@@ -855,7 +855,7 @@ function closeCal(){document.getElementById('cal-overlay').classList.remove('sho
 function calNav(dir){calViewDate.setMonth(calViewDate.getMonth()+dir);renderCalGrid();}
 function renderCalGrid(){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const sel=fmt(cDate),y=calViewDate.getFullYear(),m=calViewDate.getMonth();
   document.getElementById('cal-month-label').textContent=MESES[m]+' '+y;
   const firstDay=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();
@@ -878,7 +878,7 @@ function renderCalGrid(){
 }
 function pickCalDay(ds){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const d=new Date(ds+'T12:00:00');
   if(d<today||d>maxD)return;
   cDate=d;selMesas=[];
@@ -1113,7 +1113,7 @@ async function adminCancelDirect(res){
 function openAdminCreate(){
   document.getElementById('ac-socio').innerHTML=Object.entries(SOCIOS).filter(([k,v])=>!v.admin).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([k,v])=>'<option value="'+k+'">'+v.nombre+' '+v.apellidos+' (nº '+parseInt(k)+')</option>').join('');
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const inp=document.getElementById('ac-fecha');
   inp.min=fmt(today);inp.max=fmt(maxD);inp.value=fmt(today);
   adminComs=8;document.getElementById('ac-coms').textContent=8;
@@ -1262,7 +1262,7 @@ function startKioskRealtime(){
 
 function changeKioskDate(dir){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const nd=new Date(kioskDate);nd.setDate(nd.getDate()+dir);
   nd.setHours(0,0,0,0);
   if(nd<today||nd>maxD)return;
@@ -1272,7 +1272,7 @@ function changeKioskDate(dir){
 
 function renderKioskDate(){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const kd=new Date(kioskDate);kd.setHours(0,0,0,0);
   const isToday=kd.getTime()===today.getTime();
   document.getElementById('kiosk-day').textContent=isToday?'Hoy · '+DIAS[kd.getDay()]:DIAS[kd.getDay()];
@@ -1388,7 +1388,7 @@ function kioskCalNav(dir){
 }
 function renderKioskCalGrid(){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const sel=fmt(kioskDate);
   const y=kioskCalView.getFullYear(),m=kioskCalView.getMonth();
   document.getElementById('kiosk-cal-month').textContent=MESES[m]+' '+y;
@@ -1412,7 +1412,7 @@ function renderKioskCalGrid(){
 }
 function pickKioskCalDay(ds){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=new Date(today);maxD.setDate(today.getDate()+30);
+  const maxD=new Date(today);maxD.setDate(today.getDate()+60);
   const d=new Date(ds+'T12:00:00');
   if(d<today||d>maxD)return;
   kioskDate=d;
@@ -1605,13 +1605,19 @@ renderFloor=function(){
 const _handleClickOrig=handleClick;
 handleClick=function(id){
   const f=fmt(cDate), sorteo=getSorteo(f,cTurno);
-  if(sorteo&&sorteo.estado!=='realizado'){
-    if(!esSorteoAbierto(sorteo)) return;
+  const sorteoActivo=sorteo&&sorteo.estado!=='realizado'&&esSorteoAbierto(sorteo);
+  if(sorteoActivo&&!isAdmin()){
     if(inscripciones.some(i=>i.sorteo_id===sorteo.id&&i.socio_num===cu)){showToast('Ya estás inscrito en este sorteo');return;}
     if(selMesas.includes(id)) selMesas=selMesas.filter(m=>m!==id);
     else{selMesas.push(id);selMesas.sort();}
     updateFormSorteo();renderFloor();
   } else {
+    // Validar límite 30 días para reservas normales
+    if(!isAdmin()){
+      const today=new Date();today.setHours(0,0,0,0);
+      const dias=Math.round((new Date(f+'T12:00:00')-today)/86400000);
+      if(dias>30){showToast('Las reservas normales se pueden hacer con un máximo de 30 días de antelación');return;}
+    }
     _handleClickOrig(id);
   }
 };
@@ -1634,7 +1640,14 @@ function updateFormSorteo(){
 const _openConfirmOrig=openConfirm;
 openConfirm=function(){
   const sorteo=getSorteo(fmt(cDate),cTurno);
-  if(sorteo&&sorteo.estado!=='realizado'&&esSorteoAbierto(sorteo)){openConfirmSorteo(sorteo);return;}
+  const sorteoActivo=sorteo&&sorteo.estado!=='realizado'&&esSorteoAbierto(sorteo);
+  if(sorteoActivo&&!isAdmin()){openConfirmSorteo(sorteo);return;}
+  // Validar límite de 30 días para reservas normales (no sorteo, no admin)
+  if(!isAdmin()&&!sorteoActivo){
+    const today=new Date();today.setHours(0,0,0,0);
+    const dias=Math.round((new Date(fmt(cDate)+'T12:00:00')-today)/86400000);
+    if(dias>30){showToast('Las reservas normales se pueden hacer con un máximo de 30 días de antelación');return;}
+  }
   document.querySelector('.btn-reservar').textContent='Confirmar reserva →';
   document.querySelector('.btn-reservar').style.background='';
   _openConfirmOrig();
