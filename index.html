@@ -609,7 +609,7 @@
     <div id="sorteo-detail-body"></div>
     <div class="modal-actions" style="margin-top:.75rem;">
       <button class="btn-back" onclick="closeSorteoDetail()">Cerrar</button>
-      <button class="btn-confirm" id="btn-ejecutar-sorteo" onclick="ejecutarSorteo()" style="background:#7B2D8B;display:none;">✓ Cerrar inscripciones</button>
+      <button class="btn-confirm" id="btn-ejecutar-sorteo" onclick="ejecutarSorteo()" style="background:#7B2D8B;display:none;">🎲 Adjudicar mesas</button>
     </div>
   </div>
 </div>
@@ -727,22 +727,29 @@ function sN(id){const s=SOCIOS[id];return s?s.nombre+' '+s.apellidos:'';}
 function isAdmin(){return SOCIOS[cu]?.admin;}
 function getRes(m,t,f){return reservas.find(r=>r.mesa===m&&r.turno===t&&r.fecha===f)||null;}
 
-// Límite de antelación para reservas: 30 días para socios normales,
-// 60 días para admins, o más si hay un sorteo con inscripción abierta
-// a una fecha más lejana.
+// Helpers de sorteo
+function getInscripcionesSorteo(sorteoId){
+  if(typeof inscripciones === 'undefined' || !Array.isArray(inscripciones)) return [];
+  return inscripciones.filter(i => i.sorteo_id === sorteoId);
+}
+function getMiInscripcion(sorteoId){
+  if(!cu) return null;
+  return getInscripcionesSorteo(sorteoId).find(i => String(i.socio_num) === String(cu)) || null;
+}
+
+// Límite de antelación:
+//   - 30 días para socios normales en días sin sorteo
+//   - 60 días si admin o si hay sorteo no realizado en esa fecha (extiende)
 function getMaxFecha(forceAdmin){
   const today=new Date();today.setHours(0,0,0,0);
   const esAdminReal = !!(SOCIOS[cu]?.admin) || !!forceAdmin;
   const baseDias = esAdminReal ? 60 : 30;
-  const maxD = new Date(today); maxD.setDate(today.getDate()+baseDias);
-  if(typeof sorteos !== 'undefined' && Array.isArray(sorteos)){
+  let maxD = new Date(today); maxD.setDate(today.getDate()+baseDias);
+  if(!esAdminReal && typeof sorteos !== 'undefined' && Array.isArray(sorteos)){
     sorteos.forEach(function(s){
       if(s.estado==='realizado') return;
       const fEvento = new Date(s.fecha+'T12:00:00'); fEvento.setHours(0,0,0,0);
-      const dias = Math.round((fEvento - today)/86400000);
-      if(dias<=45 && dias>20 && fEvento>maxD){
-        maxD.setTime(fEvento.getTime());
-      }
+      if(fEvento>maxD) maxD = new Date(fEvento);
     });
   }
   return maxD;
@@ -1575,9 +1582,8 @@ function getSorteo(fecha,turno){
   return sorteos.find(s=>s.fecha===fecha&&s.turno===turno)||null;
 }
 function esSorteoAbierto(s){
-  const today=new Date();today.setHours(0,0,0,0);
-  const dias=Math.round((new Date(s.fecha+'T12:00:00')-today)/86400000);
-  return dias<=45&&dias>20&&s.estado!=='realizado';
+  // Un sorteo está abierto a inscripciones siempre que no esté realizado.
+  return s.estado !== 'realizado';
 }
 
 // Sobreescribir renderFloor
@@ -1590,18 +1596,24 @@ renderFloor=function(){
   if(old) old.remove();
 
   if(sorteo){
-    const today=new Date();today.setHours(0,0,0,0);
-    const dias=Math.round((new Date(sorteo.fecha+'T12:00:00')-today)/86400000);
-    const abierto=esSorteoAbierto(sorteo);
-    const yaInscrito=inscripciones.some(i=>i.sorteo_id===sorteo.id&&i.socio_num===cu);
+    const yaInscrito=inscripciones.some(i=>i.sorteo_id===sorteo.id&&String(i.socio_num)===String(cu));
+    const miInscripcion=inscripciones.find(i=>i.sorteo_id===sorteo.id&&String(i.socio_num)===String(cu));
     let bHtml='';
     if(sorteo.estado==='realizado'){
-      const gane=inscripciones.find(i=>i.sorteo_id===sorteo.id&&i.socio_num===cu&&i.ganador);
-      bHtml=`<div id="sorteo-plano-banner" class="sorteo-banner"><div class="sorteo-banner-icon">${gane?'🏆':'🎲'}</div><div class="sorteo-banner-text"><div class="sorteo-banner-title">${gane?'¡Conseguiste mesa!':'Sorteo realizado'}</div><div class="sorteo-banner-sub">${gane?'Tu reserva está confirmada':'No resultaste seleccionado'}</div></div></div>`;
-    } else if(abierto){
-      bHtml=`<div id="sorteo-plano-banner" class="sorteo-banner"><div class="sorteo-banner-icon">🎲</div><div class="sorteo-banner-text"><div class="sorteo-banner-title">Día de fiesta · Sorteo${sorteo.descripcion?' — '+sorteo.descripcion:''}</div><div class="sorteo-banner-sub">${yaInscrito?'✓ Ya estás inscrito':'Selecciona mesa/s e inscríbete. Sorteo en '+dias+' días.'}</div></div></div>`;
-    } else if(dias>20){
-      bHtml=`<div id="sorteo-plano-banner" class="sorteo-banner" style="background:linear-gradient(135deg,#555,#333)"><div class="sorteo-banner-icon">📅</div><div class="sorteo-banner-text"><div class="sorteo-banner-title">Día de fiesta${sorteo.descripcion?' — '+sorteo.descripcion:''}</div><div class="sorteo-banner-sub">Inscripciones abren en ${dias-45} días</div></div></div>`;
+      const gane=miInscripcion&&miInscripcion.ganador;
+      const rechazo=miInscripcion&&miInscripcion.rechazado;
+      let titulo, sub;
+      if(gane){ titulo='🏆 ¡Conseguiste mesa!'; sub='Tu reserva está confirmada'; }
+      else if(rechazo){ titulo='Sorteo realizado'; sub='No te han sido adjudicadas mesas en este sorteo'; }
+      else if(yaInscrito){ titulo='Sorteo realizado'; sub='Pendiente de revisar adjudicación'; }
+      else { titulo='Sorteo realizado'; sub='Día reservado por sorteo'; }
+      bHtml=`<div id="sorteo-plano-banner" class="sorteo-banner"><div class="sorteo-banner-icon">${gane?'🏆':'🎲'}</div><div class="sorteo-banner-text"><div class="sorteo-banner-title">${titulo}</div><div class="sorteo-banner-sub">${sub}</div></div></div>`;
+    } else {
+      const total=getInscripcionesSorteo(sorteo.id).length;
+      const sub=yaInscrito
+        ? '✓ Ya estás inscrito · puedes modificar tus mesas preferidas'
+        : 'Selecciona las mesas que prefieras e inscríbete · '+total+' inscritos';
+      bHtml=`<div id="sorteo-plano-banner" class="sorteo-banner"><div class="sorteo-banner-icon">🎲</div><div class="sorteo-banner-text"><div class="sorteo-banner-title">Día de sorteo${sorteo.descripcion?' · '+sorteo.descripcion:''}</div><div class="sorteo-banner-sub">${sub}</div></div></div>`;
     }
     if(bHtml) document.getElementById('status-panel').insertAdjacentHTML('beforebegin',bHtml);
   }
@@ -1610,13 +1622,13 @@ renderFloor=function(){
     const res=getRes(id,cTurno,f), isSel=selMesas.includes(id);
     if(sorteo&&sorteo.estado!=='realizado'){
       const inscrip=inscripciones.filter(i=>i.sorteo_id===sorteo.id&&Array.isArray(i.mesas)&&i.mesas.includes(id));
-      const miIns=inscrip.find(i=>i.socio_num===cu);
+      const miIns=inscrip.find(i=>String(i.socio_num)===String(cu));
       const fill=miIns?FILL_SORTEO_MIO:inscrip.length?FILL_SORTEO:FILL.libre;
       document.getElementById('m'+id+'-bg').setAttribute('fill',fill);
       document.getElementById('m'+id+'-bg').setAttribute('stroke',isSel?'#fff':fill);
       document.getElementById('m'+id+'-bg').setAttribute('stroke-width',isSel?'5':'3');
-      document.getElementById('m'+id+'-sub').textContent=miIns?'✓ Tu inscripción':inscrip.length?inscrip.length+' inscrito'+(inscrip.length>1?'s':''):(isSel?'✓ Seleccionada':'');
-      document.getElementById('mesa-'+id).style.cursor=esSorteoAbierto(sorteo)?'pointer':'default';
+      document.getElementById('m'+id+'-sub').textContent=miIns?'✓ Tu preferencia':inscrip.length?inscrip.length+' inscrito'+(inscrip.length>1?'s':''):(isSel?'✓ Seleccionada':'');
+      document.getElementById('mesa-'+id).style.cursor='pointer';
     } else {
       const libre=!res,esMia=res&&res.socio_num===cu;
       document.getElementById('m'+id+'-bg').setAttribute('fill',libre?FILL.libre:esMia?FILL.mia:FILL.occupied);
@@ -1632,9 +1644,9 @@ renderFloor=function(){
 const _handleClickOrig=handleClick;
 handleClick=function(id){
   const f=fmt(cDate), sorteo=getSorteo(f,cTurno);
-  const sorteoActivo=sorteo&&sorteo.estado!=='realizado'&&esSorteoAbierto(sorteo);
+  const sorteoActivo=sorteo&&sorteo.estado!=='realizado';
   if(sorteoActivo&&!isAdmin()){
-    if(inscripciones.some(i=>i.sorteo_id===sorteo.id&&i.socio_num===cu)){showToast('Ya estás inscrito en este sorteo');return;}
+    // Toggle mesa preferida (sin bloquear, son preferencias del socio)
     if(selMesas.includes(id)) selMesas=selMesas.filter(m=>m!==id);
     else{selMesas.push(id);selMesas.sort();}
     updateFormSorteo();renderFloor();
@@ -1685,54 +1697,77 @@ function openConfirmSorteo(sorteo){
   if(!document.getElementById('f-tel').value.trim()){showToast('Introduce un teléfono de contacto');return;}
   const cd=new Date(cDate);
   const mesasLabel=selMesas.length===1?'Mesa '+selMesas[0]:'Mesas '+selMesas.join(' + ');
+  const yaInscrito = !!getMiInscripcion(sorteo.id);
   document.getElementById('modal-summary').innerHTML=
     '<div class="summary-row"><span>Socio</span><span>'+sN(cu)+'</span></div>'+
-    '<div class="summary-row"><span>'+(selMesas.length===1?'Mesa':'Mesas')+'</span><span>'+mesasLabel+'</span></div>'+
+    '<div class="summary-row"><span>Preferencia</span><span>'+mesasLabel+'</span></div>'+
     '<div class="summary-row"><span>Fecha</span><span>'+DIAS[cd.getDay()]+', '+cd.getDate()+' de '+MESES[cd.getMonth()]+'</span></div>'+
     '<div class="summary-row"><span>Turno</span><span>'+TL[cTurno]+'</span></div>'+
     '<div class="summary-row"><span>Comensales</span><span>'+coms+' personas</span></div>'+
     '<div class="summary-row"><span>Teléfono</span><span>'+document.getElementById('f-tel').value+'</span></div>'+
-    '<div style="margin-top:.65rem;padding:.6rem .75rem;background:rgba(123,45,139,.1);border-radius:8px;font-size:.78rem;color:#7B2D8B;line-height:1.5;">⚠️ Inscripción <strong>pendiente de sorteo</strong>. El resultado se publicará aprox. 20 días antes del evento.</div>';
+    '<div style="margin-top:.65rem;padding:.6rem .75rem;background:rgba(123,45,139,.1);border-radius:8px;font-size:.78rem;color:#7B2D8B;line-height:1.5;">⚠️ Día de sorteo. Las mesas que eliges son <strong>preferencias</strong>; el administrador hará el sorteo y adjudicará las mesas según disponibilidad y comensales. Las mesas finales pueden ser distintas a las elegidas.</div>';
   document.getElementById('confirm-modal').classList.add('show');
-  document.getElementById('btn-confirm-ok').textContent='Inscribirme';
+  document.getElementById('btn-confirm-ok').textContent = yaInscrito ? 'Actualizar inscripción' : 'Inscribirme';
   document.getElementById('btn-confirm-ok').onclick=()=>doInscripcionSorteo(sorteo);
 }
 
 async function doInscripcionSorteo(sorteo){
   const btn=document.getElementById('btn-confirm-ok');
   btn.disabled=true;btn.textContent='Guardando…';
-  const {data,error}=await sb.from('inscripciones_sorteo').insert([{
-    sorteo_id:sorteo.id,socio_num:cu,mesas:selMesas,
-    comensales:coms,tel:document.getElementById('f-tel').value,
-    obs:document.getElementById('f-obs').value,ganador:false
-  }]).select();
-  if(error){showToast('Error al inscribirse');console.error(error);btn.disabled=false;btn.textContent='Inscribirme';return;}
-  inscripciones.push(data[0]);
-  saveSocioTel(document.getElementById('f-tel').value);
+  const tel=document.getElementById('f-tel').value;
+  const obs=document.getElementById('f-obs').value;
+  const existente = inscripciones.find(i => i.sorteo_id === sorteo.id && String(i.socio_num) === String(cu));
+  if(existente){
+    const {data,error}=await sb.from('inscripciones_sorteo').update({
+      mesas:selMesas,comensales:coms,tel,obs
+    }).eq('id',existente.id).select();
+    if(error){showToast('Error al actualizar inscripción');console.error(error);btn.disabled=false;btn.textContent='Inscribirme';return;}
+    if(data&&data[0]){
+      const idx = inscripciones.findIndex(i => i.id === existente.id);
+      if(idx>=0) inscripciones[idx] = data[0];
+    }
+  } else {
+    const {data,error}=await sb.from('inscripciones_sorteo').insert([{
+      sorteo_id:sorteo.id,socio_num:cu,mesas:selMesas,
+      comensales:coms,tel,obs,ganador:false,rechazado:false
+    }]).select();
+    if(error){showToast('Error al inscribirse');console.error(error);btn.disabled=false;btn.textContent='Inscribirme';return;}
+    if(data&&data[0]) inscripciones.push(data[0]);
+  }
+  saveSocioTel(tel);
   btn.disabled=false;btn.textContent='Confirmar';btn.onclick=doReserva;
   closeConfirm();selMesas=[];
   document.getElementById('reserva-form').classList.remove('visible');
   document.querySelector('.btn-reservar').textContent='Confirmar reserva →';
   document.querySelector('.btn-reservar').style.background='';
   renderFloor();renderStatus();
-  showToast('✓ Inscripción al sorteo guardada');
+  showToast(existente ? '✓ Inscripción actualizada' : '✓ Inscripción al sorteo guardada');
 }
 
 // Mis reservas: mostrar inscripciones
 const _renderMRorig=renderMisReservas;
 renderMisReservas=function(){
   _renderMRorig();
-  const mias=inscripciones.filter(i=>i.socio_num===cu);
+  const mias=inscripciones.filter(i=>String(i.socio_num)===String(cu));
   if(!mias.length) return;
   let html='<div class="section-title" style="margin-bottom:.5rem;">Inscripciones a sorteos</div>';
   mias.forEach(i=>{
     const s=sorteos.find(x=>x.id===i.sorteo_id);if(!s) return;
     const d=new Date(s.fecha+'T12:00:00');
-    const ml=i.mesas.length===1?'Mesa '+i.mesas[0]:'Mesas '+i.mesas.join(' + ');
-    const est=s.estado==='realizado'?(i.ganador?'<span style="color:#27AE60;font-weight:600">✓ Seleccionado</span>':'<span style="color:#C0392B">No seleccionado</span>'):'<span class="sorteo-badge">⏳ Pendiente de sorteo</span>';
-    html+='<div class="reserva-item" style="border-color:rgba(123,45,139,.25)">'+
+    const mesasArr = Array.isArray(i.mesas) ? i.mesas : [];
+    const ml = mesasArr.length === 0 ? '—' : mesasArr.length===1?'Mesa '+mesasArr[0]:'Mesas '+mesasArr.join(' + ');
+    let est;
+    if(s.estado==='realizado'){
+      if(i.ganador) est = '<span style="color:#27AE60;font-weight:600">🏆 Adjudicado</span>';
+      else if(i.rechazado) est = '<span style="color:#C0392B;font-weight:600">❌ No te han sido adjudicadas mesas en este sorteo</span>';
+      else est = '<span style="color:#888">Pendiente de revisar</span>';
+    } else {
+      est = '<span class="sorteo-badge">⏳ Pendiente de sorteo</span>';
+    }
+    const titulo = i.ganador ? '🏆 ' + ml : '🎲 ' + ml + (mesasArr.length>0 ? ' (preferidas)' : '');
+    html+='<div class="reserva-item" style="border-color:rgba(123,45,139,.25);' + (i.rechazado?'opacity:.65;':'') + '">'+
       '<div class="reserva-date-box" style="background:#7B2D8B"><div class="rday">'+d.getDate()+'</div><div class="rmonth">'+MESES_C[d.getMonth()]+'</div></div>'+
-      '<div class="reserva-info"><div class="mesa-name">🎲 '+ml+'</div>'+
+      '<div class="reserva-info"><div class="mesa-name">'+titulo+'</div>'+
       '<div class="reserva-meta">'+i.comensales+' comensales · <span class="reserva-turno">'+TL[s.turno]+'</span></div>'+
       (s.descripcion?'<div class="reserva-meta">🎉 '+s.descripcion+'</div>':'')+
       '<div class="reserva-meta" style="margin-top:.25rem;">'+est+'</div></div>'+
@@ -1769,10 +1804,8 @@ function renderSorteoLista(){
     let elabel='',ecls='';
     if(s.estado==='realizado'){elabel='Realizado';ecls='realizado';}
     else if(dias<0){elabel='Pasado';ecls='cerrado';}
-    else if(dias>45){elabel='Inscripciones cerradas';ecls='cerrado';}
-    else if(dias>20){elabel='Inscripciones abiertas';ecls='abierto';}
-    else{elabel='Pendiente sorteo';ecls='cerrado';}
-    const puedeSort=dias<=20&&dias>=0&&s.estado!=='realizado';
+    else {elabel='Inscripciones abiertas';ecls='abierto';}
+    const puedeSort = s.estado !== 'realizado' && dias >= 0;
     html+='<div class="sorteo-card">'+
       '<div class="sorteo-card-header"><div>'+
       '<div class="sorteo-card-title">'+(s.descripcion||'Día festivo')+'</div>'+
@@ -1781,7 +1814,7 @@ function renderSorteoLista(){
       '<div class="sorteo-inscritos"><span class="sorteo-stat">👥 '+ins.length+' inscritos</span></div>'+
       '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">'+
       '<button class="btn-sorteo outline" onclick="verDetalleSorteo(\''+s.id+'\')">Ver inscritos</button>'+
-      (puedeSort?'<button class="btn-sorteo primary" onclick="verDetalleSorteo(\''+s.id+'\',true)">🎲 Realizar sorteo</button>':'')+
+      (puedeSort?'<button class="btn-sorteo primary" onclick="verDetalleSorteo(\''+s.id+'\',true)">🎲 Adjudicar mesas</button>':'')+
       '<button class="btn-sorteo danger" onclick="eliminarSorteo(\''+s.id+'\')">Eliminar</button>'+
       '</div></div>';
   });
@@ -1830,40 +1863,173 @@ function verDetalleSorteo(id,mostrarBoton=false){
 
 function renderDetalleInscripciones(ins,realizado){
   if(!ins.length){document.getElementById('sorteo-detail-body').innerHTML='<div class="empty-state" style="padding:1.5rem 0"><div class="empty-icon">👥</div><p>Nadie inscrito todavía.</p></div>';return;}
-  let html='<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem;">'+ins.length+' inscripciones</div>';
+  const totalComs = ins.reduce((a,i)=>a+(i.comensales||0),0);
+  let html='<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem;">'+ins.length+' inscripciones · '+totalComs+' comensales en total</div>';
   ins.forEach((i,idx)=>{
-    const ml=i.mesas.length===1?'Mesa '+i.mesas[0]:'Mesas '+i.mesas.join('+');
-    html+='<div class="inscripcion-item" style="'+(i.ganador?'border-color:#7B2D8B;background:rgba(123,45,139,.05)':'')+'">'+
+    const mesasArr = Array.isArray(i.mesas) ? i.mesas : [];
+    const ml = mesasArr.length===0 ? '—' : mesasArr.length===1?'Mesa '+mesasArr[0]:'Mesas '+mesasArr.join('+');
+    let estadoBadge = '';
+    if(realizado){
+      if(i.ganador) estadoBadge='<div style="color:#7B2D8B;font-weight:600;font-size:.78rem;">🏆 Adjudicado</div>';
+      else if(i.rechazado) estadoBadge='<div style="color:#c33;font-weight:600;font-size:.78rem;">✗ No adjudicado</div>';
+    }
+    html+='<div class="inscripcion-item" style="'+(i.ganador?'border-color:#7B2D8B;background:rgba(123,45,139,.05)':i.rechazado?'opacity:.6':'')+'">'+
       '<div class="inscripcion-num '+(i.ganador?'ganador':'')+'">'+(idx+1)+'</div>'+
       '<div class="inscripcion-info"><div class="inscripcion-nombre">'+sN(i.socio_num)+'</div>'+
-      '<div class="inscripcion-meta">'+ml+' · '+i.comensales+' comensales</div>'+
+      '<div class="inscripcion-meta">Pide: '+ml+' · '+i.comensales+' comensales</div>'+
       (i.tel?'<div class="inscripcion-meta">📞 '+i.tel+'</div>':'')+
-      '</div>'+(realizado?'<div class="ganador-mark">'+(i.ganador?'🏆 Ganador':'')+'</div>':'')+
+      (i.obs?'<div class="inscripcion-meta">📝 '+i.obs+'</div>':'')+
+      '</div>'+estadoBadge+
       '</div>';
   });
   document.getElementById('sorteo-detail-body').innerHTML=html;
 }
 
-function closeSorteoDetail(){document.getElementById('sorteo-detail-modal').classList.remove('show');}
+// Estado local de adjudicación
+let adjudicaciones = {};
 
+function renderAdjudicacionInscripciones(ins){
+  if(!ins.length){document.getElementById('sorteo-detail-body').innerHTML='<div class="empty-state" style="padding:1.5rem 0"><div class="empty-icon">👥</div><p>Nadie inscrito.</p></div>';return;}
+  const totalComs = ins.reduce((a,i)=>a+(i.comensales||0),0);
+  let html='<div style="padding:.75rem;background:rgba(123,45,139,.08);border:1px solid rgba(123,45,139,.3);border-radius:8px;margin-bottom:.85rem;font-size:.82rem;line-height:1.5;">'+
+    '<strong>Adjudicación de mesas</strong><br>'+
+    ins.length+' inscripciones · '+totalComs+' comensales totales<br>'+
+    '<span style="color:var(--text-muted);font-size:.76rem">Marca las mesas que adjudicas a cada socio. Si alguien no recibe mesa, déjalo vacío y márcalo como "no adjudicado".</span>'+
+    '</div>';
+  const mesas = getMesasActivas();
+  const mesasAsignadasGlobal = {};
+  mesas.forEach(m => mesasAsignadasGlobal[m] = []);
+  ins.forEach((i,idx)=>{
+    const sel = adjudicaciones[i.id] || {};
+    const rechazado = !!sel.rechazado;
+    const mesasAsignadas = sel.mesas || [];
+    mesasAsignadas.forEach(m => mesasAsignadasGlobal[m].push(sN(i.socio_num)));
+    const mesasArr = Array.isArray(i.mesas) ? i.mesas : [];
+    const mlPedidas = mesasArr.length ? mesasArr.join('+') : '—';
+    html+='<div class="inscripcion-item" style="display:block;padding:.75rem;'+(rechazado?'opacity:.55;':'')+'">'+
+      '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem;">'+
+        '<div class="inscripcion-num">'+(idx+1)+'</div>'+
+        '<div style="flex:1;">'+
+          '<div class="inscripcion-nombre">'+sN(i.socio_num)+'</div>'+
+          '<div class="inscripcion-meta">Pide: Mesa '+mlPedidas+' · '+i.comensales+' comensales'+(i.tel?' · 📞 '+i.tel:'')+'</div>'+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;">'+
+        '<span style="font-size:.75rem;color:var(--text-muted);">Adjudicar:</span>';
+    mesas.forEach(m=>{
+      const checked = mesasAsignadas.includes(m);
+      html+='<label style="display:inline-flex;align-items:center;gap:.25rem;font-size:.78rem;padding:.25rem .5rem;border:1px solid '+(checked?'#7B2D8B':'rgba(255,255,255,.15)')+';border-radius:6px;background:'+(checked?'rgba(123,45,139,.15)':'transparent')+';cursor:'+(rechazado?'not-allowed':'pointer')+';">'+
+        '<input type="checkbox" '+(checked?'checked':'')+' '+(rechazado?'disabled':'')+' onchange="toggleAdjudicacion(\''+i.id+'\','+m+',this.checked)">'+
+        'M'+m+
+      '</label>';
+    });
+    html+='<label style="margin-left:auto;display:inline-flex;align-items:center;gap:.3rem;font-size:.78rem;padding:.25rem .55rem;border:1px solid '+(rechazado?'#c33':'rgba(255,255,255,.15)')+';border-radius:6px;background:'+(rechazado?'rgba(204,51,51,.15)':'transparent')+';cursor:pointer;">'+
+      '<input type="checkbox" '+(rechazado?'checked':'')+' onchange="toggleRechazo(\''+i.id+'\',this.checked)">'+
+      '✗ No adjudicar'+
+    '</label>';
+    html+='</div></div>';
+  });
+  // Resumen
+  html+='<div style="margin-top:.85rem;padding:.65rem .75rem;background:rgba(255,255,255,.04);border-radius:8px;font-size:.78rem;line-height:1.6;">'+
+    '<strong>Resumen de mesas</strong><br>';
+  mesas.forEach(m=>{
+    const oc = mesasAsignadasGlobal[m];
+    if(oc.length===0) html+='M'+m+': <span style="color:#888;">libre</span><br>';
+    else if(oc.length===1) html+='M'+m+': '+oc[0]+'<br>';
+    else html+='M'+m+': <span style="color:#c33;">⚠️ '+oc.length+' socios asignados — corrige</span><br>';
+  });
+  html+='</div>';
+  document.getElementById('sorteo-detail-body').innerHTML=html;
+}
+
+function toggleAdjudicacion(insId,mesa,checked){
+  if(!adjudicaciones[insId]) adjudicaciones[insId]={mesas:[],rechazado:false};
+  const arr = adjudicaciones[insId].mesas;
+  if(checked){if(!arr.includes(mesa)) arr.push(mesa); arr.sort((a,b)=>a-b);}
+  else adjudicaciones[insId].mesas = arr.filter(m=>m!==mesa);
+  renderAdjudicacionInscripciones(inscripciones.filter(i=>i.sorteo_id===sorteoActualId));
+}
+
+function toggleRechazo(insId,checked){
+  if(!adjudicaciones[insId]) adjudicaciones[insId]={mesas:[],rechazado:false};
+  adjudicaciones[insId].rechazado = checked;
+  if(checked) adjudicaciones[insId].mesas = [];
+  renderAdjudicacionInscripciones(inscripciones.filter(i=>i.sorteo_id===sorteoActualId));
+}
+
+function closeSorteoDetail(){document.getElementById('sorteo-detail-modal').classList.remove('show'); adjudicaciones={};}
+
+// Inicia adjudicación: muestra los controles
 async function ejecutarSorteo(){
   const s=sorteos.find(x=>x.id===sorteoActualId);
   if(!s) return;
   const ins=inscripciones.filter(i=>i.sorteo_id===sorteoActualId);
   if(!ins.length){showToast('No hay inscripciones');return;}
-  const msg='¿Cerrar las inscripciones de este sorteo?\n\n'+
-    'Hay '+ins.length+' solicitudes.\n\n'+
-    'El sorteo se realiza manualmente. Después, asigna las mesas a los ganadores '+
-    'desde el panel de "Crear reserva".';
-  if(!confirm(msg)) return;
-  showLoading('Cerrando sorteo…');
-  const {error}=await sb.from('sorteos').update({estado:'realizado'}).eq('id',sorteoActualId);
-  if(error){hideLoading();showToast('Error al cerrar el sorteo');console.error(error);return;}
+  adjudicaciones = {};
+  ins.forEach(i => { adjudicaciones[i.id] = { mesas: [], rechazado: false }; });
+  const btn = document.getElementById('btn-ejecutar-sorteo');
+  btn.textContent='✓ Confirmar adjudicación';
+  btn.onclick = confirmarAdjudicacion;
+  renderAdjudicacionInscripciones(ins);
+}
+
+async function confirmarAdjudicacion(){
+  const s=sorteos.find(x=>x.id===sorteoActualId);
+  if(!s) return;
+  const ins=inscripciones.filter(i=>i.sorteo_id===sorteoActualId);
+  // Validar conflictos
+  const conflictos={};
+  for(const i of ins){
+    const adj = adjudicaciones[i.id] || {mesas:[],rechazado:false};
+    if(adj.rechazado) continue;
+    for(const m of adj.mesas) conflictos[m]=(conflictos[m]||0)+1;
+  }
+  const conflictoMesas = Object.keys(conflictos).filter(m=>conflictos[m]>1);
+  if(conflictoMesas.length>0){
+    showToast('⚠️ Mesas duplicadas: '+conflictoMesas.map(m=>'M'+m).join(', '));
+    return;
+  }
+  // Validar sin decidir
+  const sinDecidir = ins.filter(i=>{
+    const adj = adjudicaciones[i.id] || {mesas:[],rechazado:false};
+    return !adj.rechazado && adj.mesas.length===0;
+  });
+  if(sinDecidir.length>0){
+    if(!confirm('Hay '+sinDecidir.length+' inscripciones sin decidir. ¿Marcarlas como no adjudicadas?')) return;
+    sinDecidir.forEach(i=>{adjudicaciones[i.id]={mesas:[],rechazado:true};});
+  }
+  if(!confirm('¿Confirmar adjudicación final? Se crearán las reservas para los ganadores.')) return;
+  showLoading('Adjudicando…');
+  for(const i of ins){
+    const adj = adjudicaciones[i.id] || {mesas:[],rechazado:false};
+    if(adj.rechazado || adj.mesas.length===0){
+      const {error} = await sb.from('inscripciones_sorteo').update({rechazado:true,ganador:false}).eq('id',i.id);
+      if(error) console.error(error);
+      const localIns = inscripciones.find(x=>x.id===i.id);
+      if(localIns){localIns.rechazado=true;localIns.ganador=false;}
+    } else {
+      const {error: errIns} = await sb.from('inscripciones_sorteo').update({ganador:true,rechazado:false,mesas:adj.mesas}).eq('id',i.id);
+      if(errIns) console.error(errIns);
+      const localIns = inscripciones.find(x=>x.id===i.id);
+      if(localIns){localIns.ganador=true;localIns.rechazado=false;localIns.mesas=adj.mesas.slice();}
+      for(const mesa of adj.mesas){
+        const r = {socio_num:i.socio_num,mesa,turno:s.turno,fecha:s.fecha,comensales:i.comensales,tel:i.tel||'',obs:i.obs||''};
+        const saved = await saveReserva(r);
+        if(saved) reservas.push(saved);
+      }
+    }
+  }
+  await sb.from('sorteos').update({estado:'realizado'}).eq('id',sorteoActualId);
   sorteos.find(x=>x.id===sorteoActualId).estado='realizado';
-  hideLoading();renderSorteoLista();
-  renderDetalleInscripciones(inscripciones.filter(i=>i.sorteo_id===sorteoActualId),true);
+  hideLoading();
+  renderSorteoLista();
+  const ins2 = inscripciones.filter(i=>i.sorteo_id===sorteoActualId);
+  renderDetalleInscripciones(ins2,true);
   document.getElementById('btn-ejecutar-sorteo').style.display='none';
-  showToast('✓ Inscripciones cerradas. Asigna las mesas desde "Crear reserva".');
+  const ganadores = ins2.filter(i=>i.ganador).length;
+  const rechazados = ins2.filter(i=>i.rechazado).length;
+  showToast('✓ Sorteo cerrado · '+ganadores+' adjudicados · '+rechazados+' no adjudicados');
+  adjudicaciones = {};
 }
 
 </script>
