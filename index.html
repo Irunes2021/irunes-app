@@ -324,8 +324,8 @@
         <input type="text" id="login-user" placeholder="Ej: 042" autocomplete="off" inputmode="numeric" onclick="this.focus()" ontouchend="var el=this;setTimeout(function(){el.focus();},50);">
       </div>
       <div class="field-group">
-        <label>DNI</label>
-        <input type="password" id="login-pass" placeholder="Ej: 12345678" autocomplete="new-password" onclick="this.focus()" ontouchend="var el=this;setTimeout(function(){el.focus();},50);">
+        <label>DNI sin letra</label>
+        <input type="password" id="login-pass" placeholder="Ej: 12345678" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" onclick="this.focus()" ontouchend="var el=this;setTimeout(function(){el.focus();},50);">
         <div class="error-msg" id="login-error">Número de socio o DNI incorrecto</div>
       </div>
       <button class="btn-primary" id="login-btn" onclick="doLogin()">Entrar</button>
@@ -668,7 +668,7 @@
     <h3>Identificación</h3>
     <p>Introduce tu número de socio y DNI para hacer una reserva</p>
     <div class="kiosk-field"><label>Número de socio</label><input type="text" id="kiosk-user" placeholder="Ej: 042" inputmode="numeric" autocomplete="off"></div>
-    <div class="kiosk-field"><label>DNI</label><input type="password" id="kiosk-pass" placeholder="Ej: 12345678"></div>
+    <div class="kiosk-field"><label>DNI sin letra</label><input type="password" id="kiosk-pass" placeholder="Ej: 12345678" inputmode="numeric" pattern="[0-9]*"></div>
     <div class="kiosk-login-error" id="kiosk-error">Número de socio o DNI incorrecto</div>
     <button class="kiosk-login-btn" onclick="doKioskLogin()">Entrar →</button>
     <button class="kiosk-login-cancel" onclick="closeKioskLogin()">Cancelar</button>
