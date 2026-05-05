@@ -792,15 +792,25 @@ function getMaxFecha(forceAdmin){
   const today=new Date();today.setHours(0,0,0,0);
   const esAdminReal = !!(SOCIOS[cu]?.admin) || !!forceAdmin;
   const baseDias = esAdminReal ? 60 : 30;
-  let maxD = new Date(today); maxD.setDate(today.getDate()+baseDias);
-  if(!esAdminReal && typeof sorteos !== 'undefined' && Array.isArray(sorteos)){
-    sorteos.forEach(function(s){
-      if(s.estado==='realizado') return;
-      const fEvento = new Date(s.fecha+'T12:00:00'); fEvento.setHours(0,0,0,0);
-      if(fEvento>maxD) maxD = new Date(fEvento);
-    });
-  }
+  const maxD = new Date(today); maxD.setDate(today.getDate()+baseDias);
   return maxD;
+}
+
+// Devuelve true si hay un sorteo no realizado exactamente en esa fecha
+function esFechaSorteoAbierto(fechaStr){
+  if(typeof sorteos === 'undefined' || !Array.isArray(sorteos)) return false;
+  return sorteos.some(s => s.fecha === fechaStr && s.estado !== 'realizado');
+}
+
+// Devuelve true si el usuario puede acceder a esta fecha:
+// - Dentro del límite normal (hoy+30 socios / hoy+60 admin), O
+// - Es exactamente el día de un sorteo no realizado
+function esFechaAccesible(ds){
+  const today=new Date();today.setHours(0,0,0,0);
+  const dt=new Date(ds+'T12:00:00');dt.setHours(0,0,0,0);
+  if(dt<today) return false;
+  if(dt<=getMaxFecha()) return true;
+  return esFechaSorteoAbierto(ds);
 }
 
 function showLoading(msg='Cargando...'){
@@ -854,6 +864,22 @@ async function doLogin(){
   renderDate();renderFloor();renderStatus();
 }
 document.getElementById('login-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// ── SERVICE WORKER ───────────────────────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').then(reg=>{
+    reg.addEventListener('updatefound',()=>{
+      const nuevo=reg.installing;
+      nuevo.addEventListener('statechange',()=>{
+        if(nuevo.state==='installed'&&navigator.serviceWorker.controller){
+          navigator.serviceWorker.addEventListener('controllerchange',()=>{
+            window.location.reload();
+          });
+        }
+      });
+    });
+  });
+}
 
 // Registrar listeners de click en mesas UNA SOLA VEZ al cargar la página.
 // Si lo hacíamos en doLogin, cada login añadía un listener nuevo a cada mesa,
@@ -919,18 +945,18 @@ async function deleteReserva(id){
 // ── FECHA ────────────────────────────────────────────
 function renderDate(){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=getMaxFecha();
   const cd=new Date(cDate);cd.setHours(0,0,0,0);
   document.getElementById('disp-dname').textContent=DIAS[cd.getDay()];
   document.getElementById('disp-dfull').textContent=cd.getDate()+' de '+MESES[cd.getMonth()]+' '+cd.getFullYear();
   document.getElementById('btn-prev').disabled=cd<=today;
-  document.getElementById('btn-next').disabled=cd>=maxD;
+  // Flecha siguiente: disabled si el día siguiente no es accesible
+  const cdNext=new Date(cd);cdNext.setDate(cdNext.getDate()+1);
+  document.getElementById('btn-next').disabled=!esFechaAccesible(fmt(cdNext));
 }
 function changeDate(dir){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=getMaxFecha();
-  const cd=new Date(cDate);cd.setDate(cd.getDate()+dir);
-  if(cd<today||cd>maxD)return;
+  const cd=new Date(cDate);cd.setDate(cd.getDate()+dir);cd.setHours(0,0,0,0);
+  if(!esFechaAccesible(fmt(cd)))return;
   cDate=cd;selMesas=[];
   document.getElementById('reserva-form').classList.remove('visible');
   renderDate();renderFloor();renderStatus();
@@ -951,7 +977,6 @@ function closeCal(){document.getElementById('cal-overlay').classList.remove('sho
 function calNav(dir){calViewDate.setMonth(calViewDate.getMonth()+dir);renderCalGrid();}
 function renderCalGrid(){
   const today=new Date();today.setHours(0,0,0,0);
-  const maxD=getMaxFecha();
   const sel=fmt(cDate),y=calViewDate.getFullYear(),m=calViewDate.getMonth();
   document.getElementById('cal-month-label').textContent=MESES[m]+' '+y;
   const firstDay=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();
@@ -964,19 +989,18 @@ function renderCalGrid(){
     const ds=fmt(dt);
     const isToday=dt.getTime()===today.getTime();
     const isSel=ds===sel;
-    const disabled=dt<today||dt>maxD;
+    const accesible=esFechaAccesible(ds);
+    const disabled=!accesible;
     const hasRes=reservas.some(r=>r.fecha===ds&&r.socio_num===cu);
-    let cls='cal-day'+(isToday?' today':'')+(isSel?' selected':'')+(disabled?' disabled':'')+(hasRes&&!disabled?' has-res':'');
-    const dayEl = '<div class="'+cls+'" data-date="'+ds+'" onclick="pickCalDay(this.dataset.date)">'+d+'</div>';
-    html+=dayEl;
+    const esSorteo=accesible&&esFechaSorteoAbierto(ds);
+    let cls='cal-day'+(isToday?' today':'')+(isSel?' selected':'')+(disabled?' disabled':'')+(hasRes&&!disabled?' has-res':'')+(esSorteo?' has-sorteo':'');
+    html+='<div class="'+cls+'" data-date="'+ds+'" onclick="pickCalDay(this.dataset.date)">'+d+'</div>';
   }
   document.getElementById('cal-grid').innerHTML=html;
 }
 function pickCalDay(ds){
-  const today=new Date();today.setHours(0,0,0,0);
-  const maxD=getMaxFecha();
+  if(!esFechaAccesible(ds))return;
   const d=new Date(ds+'T12:00:00');
-  if(d<today||d>maxD)return;
   cDate=d;selMesas=[];
   document.getElementById('reserva-form').classList.remove('visible');
   renderDate();renderFloor();renderStatus();closeCal();
