@@ -535,7 +535,7 @@
       </select>
     </div>
     <div class="form-row"><label>Mesa</label>
-      <select id="ac-mesa"><option value="1">Mesa 1</option><option value="2">Mesa 2</option><option value="3">Mesa 3</option><option value="4">Mesa 4</option></select>
+      <select id="ac-mesa"><option value="1">Mesa 1</option><option value="2">Mesa 2</option><option value="3">Mesa 3</option><option value="4">Mesa 4</option><option value="5">Mesa Exterior</option></select>
     </div>
     <div class="form-row">
       <label>Comensales</label>
@@ -710,7 +710,7 @@ function fmt(d){
   return y+'-'+m+'-'+day;
 }
 function getMesasActivas(){
-  return MESES_EXTERIOR.includes(new Date().getMonth())?[1,2,3,4,5]:[1,2,3,4];
+  return [1,2,3,4,5]; // mesa exterior visible todo el año (igual que el TPV)
 }
 function sN(id){const s=SOCIOS[id];return s?s.nombre+' '+s.apellidos:'';}
 function isAdmin(){return !!miAdmin;}
@@ -718,12 +718,12 @@ function getRes(m,t,f){return reservas.find(r=>r.mesa===m&&r.turno===t&&r.fecha=
 
 // ── BLOQUEOS ENTRE TURNOS ───────────────────────────────────────────
 // Si en una misma mesa y día hay reserva en un turno, ¿qué pasa con los demás?
-//   almuerzo → comida con aviso (la mesa debe quedar libre y recogida antes de las 12:00)
-//   comida   → almuerzo con aviso (12:00) · bloquea merienda (la sobremesa puede alargarse)
+//   almuerzo → no afecta a comida (el almuerzo deja la mesa libre antes de las 12:00)
+//   comida   → almuerzo con aviso (libre y recogida antes de las 12:00) · bloquea merienda (la sobremesa puede alargarse)
 //   merienda → comida con aviso (libre y recogida a las 17:00)
 //   cena     → independiente, no afecta ni le afectan
 const BLOQUEOS_TURNO = {
-  almuerzo: { comida:   'aviso',     merienda: 'libre',     cena: 'libre' },
+  almuerzo: { comida:   'libre',     merienda: 'libre',     cena: 'libre' },
   comida:   { almuerzo: 'aviso',     merienda: 'bloqueado', cena: 'libre' },
   merienda: { almuerzo: 'libre',     comida:   'aviso',     cena: 'libre' },
   cena:     { almuerzo: 'libre',     comida:   'libre',     merienda: 'libre' }
@@ -755,9 +755,6 @@ function avisoBloqueo(mesa, turno, fecha){
   if(turno === 'almuerzo' && tiene('comida')){
     msgs.push('Hay una comida reservada en esta mesa. Debes dejarla libre y recogida antes de las 12:00.');
   }
-  if(turno === 'comida' && tiene('almuerzo')){
-    msgs.push('Hay un almuerzo reservado en esta mesa. Quedará libre a las 12:00.');
-  }
   if(turno === 'comida' && tiene('merienda')){
     msgs.push('Hay una merienda reservada en esta mesa. Debes dejarla libre y recogida antes de las 17:00.');
   }
@@ -767,11 +764,6 @@ function avisoBloqueo(mesa, turno, fecha){
 // Texto corto para el plano cuando una mesa libre está en estado 'aviso'
 function etiquetaAviso(mesa, turno, fecha){
   if(turno === 'almuerzo') return 'Libre 12:00';
-  const otros = reservas.filter(r => r.mesa === mesa && r.fecha === fecha && r.turno !== turno);
-  const alm = otros.some(r => r.turno === 'almuerzo');
-  const mer = otros.some(r => r.turno === 'merienda');
-  if(turno === 'comida' && alm && mer) return '12:00–17:00';
-  if(turno === 'comida' && alm) return 'Desde 12:00';
   return 'Libre 17:00';
 }
 
@@ -1039,7 +1031,7 @@ function selTurno(t,el){
 function renderFloor(){
   const f=fmt(cDate);
   const mesaExt=document.getElementById('mesa-5');
-  if(mesaExt) mesaExt.style.display=MESES_EXTERIOR.includes(new Date().getMonth())?'block':'none';
+  if(mesaExt) mesaExt.style.display='block';
   getMesasActivas().forEach(id=>{
     const res=getRes(id,cTurno,f);
     const libre=!res,esMia=res&&res.socio_num===cu;
@@ -1098,7 +1090,7 @@ function renderStatus(){
   const miRes=reservas.filter(r=>r.fecha===f&&r.turno===cTurno&&r.socio_num===cu);
   document.getElementById('status-panel').innerHTML=
     '<div class="status-row"><span class="slabel">Situación del comedor</span>'+
-    '<div class="svals"><div class="sval-group"><div class="sval">'+(4-ocup)+'/4</div><div class="sval-label">Mesas libres</div></div></div></div>'+
+    '<div class="svals"><div class="sval-group"><div class="sval">'+(getMesasActivas().length-ocup)+'/'+getMesasActivas().length+'</div><div class="sval-label">Mesas libres</div></div></div></div>'+
     '<div class="status-row"><span class="slabel">Mi reserva</span>'+
     '<div class="svals">'+
     '<div class="sval-group"><div class="sval">'+miRes.length+'</div><div class="sval-label">Mesas</div></div>'+
@@ -1120,7 +1112,6 @@ function openConfirm(){
   const mesasConAviso = selMesas.filter(m => avisoBloqueo(m, cTurno, f) !== null);
   let avisoHtml = '';
   const avisos = mesasConAviso.map(m => (selMesas.length > 1 ? '<strong>Mesa '+m+':</strong> ' : '') + avisoBloqueo(m, cTurno, f));
-  if(cTurno === 'almuerzo') avisos.unshift('El almuerzo termina a las 12:00: la mesa debe quedar libre y recogida antes de esa hora.');
   if(avisos.length > 0){
     avisoHtml = '<div style="margin-top:.65rem;padding:.6rem .75rem;background:rgba(212,172,13,.12);border:1px solid rgba(212,172,13,.5);border-radius:8px;font-size:.82rem;color:#D4AC0D;line-height:1.5;">'+
       '⚠️ <strong>Atención:</strong> ' + avisos.join('<br>') +
@@ -1230,7 +1221,7 @@ function renderAdminPanel(){
   const prox=reservas.filter(r=>r.fecha>=today).sort((a,b)=>a.fecha.localeCompare(b.fecha)||['almuerzo','comida','merienda','cena'].indexOf(a.turno)-['almuerzo','comida','merienda','cena'].indexOf(b.turno));
   document.getElementById('admin-stats').innerHTML=
     '<div class="stat-card"><div class="stat-num">'+prox.length+'</div><div class="stat-label">Reservas</div></div>'+
-    '<div class="stat-card"><div class="stat-num">'+new Set(prox.map(r=>r.mesa)).size+'/4</div><div class="stat-label">Mesas</div></div>'+
+    '<div class="stat-card"><div class="stat-num">'+new Set(prox.map(r=>r.mesa)).size+'/'+getMesasActivas().length+'</div><div class="stat-label">Mesas</div></div>'+
     '<div class="stat-card"><div class="stat-num">'+prox.reduce((a,r)=>a+r.comensales,0)+'</div><div class="stat-label">Comensales</div></div>';
   const filt=aFilter==='todos'?prox:prox.filter(r=>r.turno===aFilter);
   const list=document.getElementById('admin-reservas-list');
@@ -1438,12 +1429,12 @@ function renderKioskRight(){
     {key:'cena',label:'Cena',icon:'🌙'}
   ];
   const html=turnos.map(t=>{
-    const rows=[1,2,3,4].map(id=>{
+    const rows=[1,2,3,4,5].map(id=>{
       const res=getRes(id,t.key,f);
       const libre=!res;
       return '<div class="kiosk-mesa-row '+(libre?'libre':'ocupada')+'">'+
         '<div>'+
-          '<div class="kiosk-mesa-name">Mesa '+id+'</div>'+
+          '<div class="kiosk-mesa-name">'+(id===5?'Mesa Ext.':'Mesa '+id)+'</div>'+
           (libre?'':'<div class="kiosk-mesa-info">'+sN(res.socio_num)+' · '+res.comensales+' pers.</div>')+
         '</div>'+
         '<span class="kiosk-mesa-status '+(libre?'libre':'ocupada')+'">'+(libre?'Libre':'Reservada')+'</span>'+
@@ -1695,7 +1686,7 @@ const _renderFloorOrig=renderFloor;
 renderFloor=function(){
   const f=fmt(cDate), sorteo=getSorteo(f,cTurno);
   const mesaExt=document.getElementById('mesa-5');
-  if(mesaExt) mesaExt.style.display=MESES_EXTERIOR.includes(new Date().getMonth())?'block':'none';
+  if(mesaExt) mesaExt.style.display='block';
   const old=document.getElementById('sorteo-plano-banner');
   if(old) old.remove();
 
